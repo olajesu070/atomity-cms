@@ -62,6 +62,44 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
 function Toolbar({ editor }: { editor: Editor }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
+  const [savedSelection, setSavedSelection] = useState<{ from: number; to: number } | null>(null);
+
+  const openImagePicker = () => {
+    const { from, to } = editor.state.selection;
+    setSavedSelection({ from, to });
+    setImageOpen(true);
+  };
+
+  const closeImagePicker = () => {
+    setImageOpen(false);
+    if (savedSelection) {
+      const docSize = editor.state.doc.content.size;
+      const safeFrom = Math.min(savedSelection.from, docSize);
+      const safeTo = Math.min(savedSelection.to, docSize);
+      editor.chain().setTextSelection({ from: safeFrom, to: safeTo }).focus().run();
+      setSavedSelection(null);
+    }
+  };
+
+  const handleSelectMedia = (media: { url: string; altText: string; id: string }) => {
+    const docSize = editor.state.doc.content.size;
+    const safeFrom = savedSelection ? Math.min(savedSelection.from, docSize) : editor.state.selection.from;
+    const safeTo = savedSelection ? Math.min(savedSelection.to, docSize) : editor.state.selection.to;
+
+    editor
+      .chain()
+      .setTextSelection({ from: safeFrom, to: safeTo })
+      .insertContent({
+        type: "image",
+        attrs: { src: media.url, alt: media.altText, mediaId: media.id },
+      })
+      .createParagraphNear()
+      .focus()
+      .run();
+
+    setImageOpen(false);
+    setSavedSelection(null);
+  };
 
   // The toolbar re-renders only when one of these flags changes, not on every keystroke.
   const state = useEditorState({
@@ -109,7 +147,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolButton icon={Quote} label="Quote" active={state.blockquote} onClick={() => chain().toggleBlockquote().run()} />
       <ToolButton icon={SquareCode} label="Code block" active={state.codeBlock} onClick={() => chain().toggleCodeBlock().run()} />
       <ToolButton icon={Minus} label="Divider" onClick={() => chain().setHorizontalRule().run()} />
-      <ToolButton icon={ImagePlus} label="Insert image" onClick={() => setImageOpen(true)} />
+      <ToolButton icon={ImagePlus} label="Insert image" onClick={openImagePicker} />
       <div className="flex-1" />
       <ToolButton icon={Undo2} label="Undo (Ctrl+Z)" disabled={!state.canUndo} onClick={() => chain().undo().run()} />
       <ToolButton icon={Redo2} label="Redo (Ctrl+Shift+Z)" disabled={!state.canRedo} onClick={() => chain().redo().run()} />
@@ -119,12 +157,8 @@ function Toolbar({ editor }: { editor: Editor }) {
       {imageOpen && (
         <MediaPickerModal
           title="Insert image"
-          onClose={() => setImageOpen(false)}
-          onSelect={(media) =>
-            chain()
-              .insertContent({ type: "image", attrs: { src: media.url, alt: media.altText, mediaId: media.id } })
-              .run()
-          }
+          onClose={closeImagePicker}
+          onSelect={handleSelectMedia}
         />
       )}
     </div>
